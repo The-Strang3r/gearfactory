@@ -36,6 +36,9 @@ body {
     pointer-events: none;
     transition: opacity 0.5s ease, background-color 0.3s ease;
     z-index: 1000;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
 }
 
 .container {
@@ -281,4 +284,33 @@ select {
 
 .disabled-thorns input {
     pointer-events: none;
+}
+
+@media (max-width: 768px) {
+    .armor-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .armor-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .dropdown-group {
+        width: 100%;
+        flex-direction: column;
+    }
+
+    select {
+        width: 100%;
+    }
+
+    #theme-toggle {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+
+    .footer {
+        font-size: 10px;
+    }
 }
