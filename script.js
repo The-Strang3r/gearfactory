@@ -9,7 +9,6 @@ const trims = ["Trim", "Spire", "Tide", "Ward", "Vex", "Wild", "Rib", "Coast", "
 const colors = ["Color", "Emerald", "Redstone", "Lapis", "Amethyst", "Quartz", "Netherite", "Diamond", "Gold", "Iron", "Copper", "Resin"];
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Apply saved theme
     (localStorage.getItem('theme') === 'light') ? setLightTheme() : setDarkTheme();
 
     const grid = document.querySelector(".armor-grid");
@@ -38,13 +37,11 @@ document.addEventListener("DOMContentLoaded", () => {
         grid.appendChild(armorDiv);
     });
 
-    // Event listeners
     document.querySelectorAll('select, input[type="checkbox"]').forEach(el => el.addEventListener('change', saveArmorData));
     document.getElementById("reset-btn").addEventListener("click", resetArmorData);
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
     const thornsToggle = document.getElementById('thorns-toggle');
-    // Restore Thorns toggle state from localStorage
     if (thornsToggle) {
         const thornsEnabled = localStorage.getItem('thornsEnabled') === 'true';
         thornsToggle.checked = thornsEnabled;
@@ -56,7 +53,6 @@ document.addEventListener("DOMContentLoaded", () => {
     toggleThorns();
 });
 
-// Save armor data
 function saveArmorData() {
     const data = {};
     document.querySelectorAll('.armor-piece').forEach((pieceDiv, index) => {
@@ -70,7 +66,6 @@ function saveArmorData() {
     showSaveNotice();
 }
 
-// Load armor data
 function loadArmorData() {
     const savedData = JSON.parse(localStorage.getItem('armorData'));
     if (!savedData) return;
@@ -88,7 +83,6 @@ function loadArmorData() {
     });
 }
 
-// Reset data
 function resetArmorData() {
     document.querySelectorAll('select').forEach(select => select.selectedIndex = 0);
     document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
@@ -98,7 +92,6 @@ function resetArmorData() {
     showSaveNotice("Reset Successful!");
 }
 
-// Save notice
 function showSaveNotice(message = "Saved!") {
     const notice = document.getElementById('save-notice');
     notice.textContent = message;
@@ -107,7 +100,6 @@ function showSaveNotice(message = "Saved!") {
     setTimeout(() => { notice.style.opacity = '0'; }, 1000);
 }
 
-// Theme toggle
 function toggleTheme() {
     if (localStorage.getItem('theme') === 'light') {
         setDarkTheme();
@@ -148,8 +140,10 @@ function setDarkTheme() {
     localStorage.setItem('theme', 'dark');
 }
 
-// Light mode joke
+// Joke is now desktop-only
 function showLightModeJoke() {
+    if (window.innerWidth <= 768) return;
+
     let joke = document.getElementById('light-mode-joke');
     if (!joke) {
         joke = document.createElement('div');
@@ -169,16 +163,15 @@ function hideLightModeJoke() {
     }
 }
 
-// Thorns toggle
 function toggleThorns() {
     const thornsToggle = document.getElementById('thorns-toggle');
-    localStorage.setItem('thornsEnabled', thornsToggle.checked); // <== ADD THIS LINE
+    localStorage.setItem('thornsEnabled', thornsToggle.checked);
 
     const thornsCheckboxes = document.querySelectorAll('input[data-enchant="Thorns III"]');
     const savedData = JSON.parse(localStorage.getItem('armorData')) || {};
 
     thornsCheckboxes.forEach((checkbox, idx) => {
-        const armorName = armorPieces[Math.floor(idx / 1)].name; // Assume one "Thorns" per piece
+        const armorName = armorPieces[Math.floor(idx / 1)].name;
         const savedEnchantments = savedData[armorName]?.enchantments || [];
 
         if (thornsToggle.checked) {
@@ -196,7 +189,6 @@ function toggleThorns() {
     saveArmorData();
 }
 
-// Animate container on load
 window.addEventListener('load', () => {
     document.querySelector('.container').classList.add('show');
 });
