@@ -1,3 +1,18 @@
+const armorIcons = {
+    "Netherite Helmet": "icons/helmet.png",
+    "Netherite Chestplate": "icons/chestplate.png",
+    "Netherite Leggings": "icons/leggings.png",
+    "Netherite Boots": "icons/boots.png"
+};
+
+const toolIcons = {
+    "Netherite Sword": "icons/sword.png",
+    "Netherite Pickaxe": "icons/pickaxe.png",
+    "Netherite Axe": "icons/axe.png",
+    "Netherite Shovel": "icons/shovel.png",
+    "Netherite Hoe": "icons/hoe.png"
+};
+
 const armorPieces = [
     { name: "Netherite Helmet", enchantments: ["Protection IV", "Unbreaking III", "Mending", "Respiration III", "Aqua Affinity I", "Thorns III"] },
     { name: "Netherite Chestplate", enchantments: ["Protection IV", "Unbreaking III", "Mending", "Thorns III"] },
@@ -34,6 +49,8 @@ function renderItems() {
         data.forEach((piece, index) => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'armor-piece';
+            itemDiv.dataset.name = piece.name;
+            itemDiv.dataset.name = piece.name;
 
             let dropdownHTML = '';
             if (currentView === 'armor') {
@@ -50,20 +67,22 @@ function renderItems() {
             }
 
             itemDiv.innerHTML = `
-                <div class="armor-header">
-                    <h2>${piece.name}</h2>
-                    ${dropdownHTML}
-                </div>
-                <div class="enchantments">
-                    ${piece.enchantments.map(enchant => `
-                        <label class="enchantment">
-                            <input type="checkbox" data-enchant="${enchant}" ${enchant.includes("Thorns") ? 'disabled' : ''}>
-                            ${enchant}
-                        </label>
-                    `).join('')}
-                </div>
+              <div class="armor-header">
+                <h2>
+                  <img src="${currentView === 'armor' ? armorIcons[piece.name] : toolIcons[piece.name]}" alt="${piece.name}" class="item-icon">
+                  ${piece.name}
+                </h2>
+                ${dropdownHTML}
+              </div>
+              <div class="enchantments">
+                ${piece.enchantments.map(enchant => `
+                  <label class="enchantment">
+                    <input type="checkbox" data-enchant="${enchant}" ${enchant.includes("Thorns") ? 'disabled' : ''}>
+                    ${enchant}
+                  </label>
+                `).join('')}
+              </div>
             `;
-
             grid.appendChild(itemDiv);
         });
 
@@ -129,7 +148,7 @@ document.addEventListener("DOMContentLoaded", () => {
 function saveArmor() {
     const data = {};
     document.querySelectorAll('.armor-piece').forEach(pieceDiv => {
-        const name = pieceDiv.querySelector("h2").textContent;
+        const name = pieceDiv.dataset.name;
         const trimSelect = pieceDiv.querySelector('.trim-select');
         const colorSelect = pieceDiv.querySelector('.color-select');
         const trim = trimSelect ? trimSelect.value : null;
@@ -153,7 +172,7 @@ function saveArmor() {
 function saveTools() {
     const data = {};
     document.querySelectorAll('.armor-piece').forEach(pieceDiv => {
-        const name = pieceDiv.querySelector("h2").textContent;
+        const name = pieceDiv.dataset.name;
         const enchants = Array.from(pieceDiv.querySelectorAll('input[type="checkbox"]:checked'))
                               .map(cb => cb.dataset.enchant);
 
@@ -173,7 +192,7 @@ function loadArmor() {
     if (!savedData) return;
 
     document.querySelectorAll('.armor-piece').forEach(pieceDiv => {
-        const name = pieceDiv.querySelector("h2").textContent;
+        const name = pieceDiv.dataset.name;
         const pieceData = savedData[name];
         if (!pieceData) {
             console.log(`[loadArmor] No saved data for ${name}`);
@@ -207,7 +226,7 @@ function loadTools() {
     if (!savedData) return;
 
     document.querySelectorAll('.armor-piece').forEach(pieceDiv => {
-        const name = pieceDiv.querySelector("h2").textContent;
+        const name = pieceDiv.dataset.name;
         const pieceData = savedData[name];
         if (!pieceData) return;
 
@@ -332,3 +351,38 @@ function toggleThorns() {
 window.addEventListener('load', () => {
     document.querySelector('.container').classList.add('show');
 });
+
+function generateEnchantPlan(enchants) {
+    // Simulate Minecraft XP cost logic using binary merging strategy
+    let books = enchants.map(e => ({ items: [e], cost: 1 }));
+
+    // Combine cheapest books first until one remains
+    const steps = [];
+    let stepCount = 1;
+
+    while (books.length > 1) {
+        // Sort by cost, then by number of items
+        books.sort((a, b) => (a.cost - b.cost) || (a.items.length - b.items.length));
+
+        // Take two cheapest
+        const left = books.shift();
+        const right = books.shift();
+
+        const merged = {
+            items: [...left.items, ...right.items],
+            cost: Math.max(left.cost, right.cost) + 1
+        };
+
+        const leftLabel = left.items.length === 1 ? left.items[0] : `Book ${left.label || stepCount++}`;
+        const rightLabel = right.items.length === 1 ? right.items[0] : `Book ${right.label || stepCount++}`;
+        const mergedLabel = `Book ${stepCount++}`;
+
+        merged.label = mergedLabel;
+        books.push(merged);
+
+        steps.push(`Combine ${leftLabel} + ${rightLabel} → ${mergedLabel}`);
+    }
+
+    steps.push(`Apply ${books[0].label || "final book"} to item`);
+    return steps;
+}
