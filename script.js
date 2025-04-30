@@ -1,16 +1,16 @@
 const armorIcons = {
-    "Netherite Helmet": "icons/helmet.png",
-    "Netherite Chestplate": "icons/chestplate.png",
-    "Netherite Leggings": "icons/leggings.png",
-    "Netherite Boots": "icons/boots.png"
+    "Netherite Helmet": "helmet.png",
+    "Netherite Chestplate": "chestplate.png",
+    "Netherite Leggings": "leggings.png",
+    "Netherite Boots": "boots.png"
 };
 
 const toolIcons = {
-    "Netherite Sword": "icons/sword.png",
-    "Netherite Pickaxe": "icons/pickaxe.png",
-    "Netherite Axe": "icons/axe.png",
-    "Netherite Shovel": "icons/shovel.png",
-    "Netherite Hoe": "icons/hoe.png"
+    "Netherite Sword": "sword.png",
+    "Netherite Pickaxe": "pickaxe.png",
+    "Netherite Axe": "axe.png",
+    "Netherite Shovel": "shovel.png",
+    "Netherite Hoe": "hoe.png"
 };
 
 const armorPieces = [
