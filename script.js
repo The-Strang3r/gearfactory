@@ -146,7 +146,6 @@ function renderItems() {
         `;
       }).join("");
 
-      // ✅ Only one Enchant button, inside the footer
       itemDiv.innerHTML = `
         <div class="armor-header">
           <h2>
@@ -178,7 +177,6 @@ function renderItems() {
         updateEnchantButtons();
         updateXpSummary();
 
-        // re-evaluate overlap after changes
         requestAnimationFrame(() => window.__updateReceiptAutoMove?.());
       });
     });
@@ -197,8 +195,6 @@ function renderItems() {
       btn.addEventListener("click", (e) => {
         const pieceDiv = e.target.closest(".armor-piece");
         if (!pieceDiv) return;
-
-        // If disabled (including Too Expensive), do nothing
         if (e.target.disabled) return;
 
         const itemName = pieceDiv.dataset.name;
@@ -218,7 +214,6 @@ function renderItems() {
       loadTools();
     }
 
-    // Enforce conflict UI after load
     document.querySelectorAll(".armor-piece").forEach(pieceDiv => {
       syncAllConflictGroupsInPiece(pieceDiv);
     });
@@ -231,14 +226,13 @@ function renderItems() {
       grid.classList.add("fade-in");
     });
 
-    // ensure the auto-move logic is active
     setupReceiptAutoMove();
     requestAnimationFrame(() => window.__updateReceiptAutoMove?.());
   }, 200);
 }
 
 // ------------------------
-// Conflict Groups (disable + grey-out)
+// Conflict Groups
 // ------------------------
 function updateConflictGroupStateFromCheckbox(changedCheckbox) {
   if (!changedCheckbox) return;
@@ -561,11 +555,6 @@ function getSelectedEnchants(pieceDiv) {
     .map(cb => cb.dataset.enchant);
 }
 
-/**
- * ✅ Correct "Too Expensive!" rule:
- * The anvil blocks ONLY if ANY SINGLE operation costs >= 40.
- * So we compute the optimal plan and check its max single-step cost.
- */
 function updateEnchantButtons() {
   document.querySelectorAll(".armor-piece").forEach((pieceDiv) => {
     const btn = pieceDiv.querySelector(".item-enchant-btn");
@@ -580,9 +569,10 @@ function updateEnchantButtons() {
       return;
     }
 
-    const tooExpensive = isTooExpensiveForItem(enchants);
+    // ✅ now checks full-process feasibility (<40 every step)
+    const feasible = isFeasibleUnder40FullProcess(enchants);
 
-    if (tooExpensive) {
+    if (!feasible) {
       btn.disabled = true;
       btn.textContent = "Too Expensive!";
       btn.classList.add("too-expensive");
@@ -637,7 +627,9 @@ function showPlanModal(itemName, enchants) {
   if (titleEl) titleEl.textContent = `Enchant Plan — ${itemName}`;
   if (subtitleEl) subtitleEl.textContent = `Selected enchantments: ${enchants.join(", ")}`;
 
-  const steps = generateEnchantPlan(enchants);
+  // ✅ show full-process plan (not just mega-book)
+  const plan = optimalFullProcessPlan(enchants, true);
+  const steps = plan.steps.length ? plan.steps : ["No valid plan found."];
   if (stepsEl) stepsEl.innerHTML = steps.map(s => `<li>${s}</li>`).join("");
 
   modal.classList.remove("hidden");
@@ -655,7 +647,7 @@ function hidePlanModal() {
 }
 
 // ------------------------
-// Auto-move receipt if it would cover Reset (with 20px buffer)
+// Auto-move receipt
 // ------------------------
 function setupReceiptAutoMove() {
   if (_receiptAutoMoveSetup) return;
@@ -696,12 +688,7 @@ function setupReceiptAutoMove() {
     const bRect = resetBtn.getBoundingClientRect();
 
     const coveredOrTooClose = rectsOverlapWithBuffer(rRect, bRect, BUFFER);
-
-    if (coveredOrTooClose) {
-      layout.classList.add("receipt-bottom");
-    } else {
-      layout.classList.remove("receipt-bottom");
-    }
+    layout.classList.toggle("receipt-bottom", coveredOrTooClose);
   }
 
   window.__updateReceiptAutoMove = update;
@@ -716,7 +703,7 @@ function setupReceiptAutoMove() {
 }
 
 // ------------------------
-// Java 1.21.x anvil math + plan + XP summary
+// Java anvil math
 // ------------------------
 const ROMAN = { I:1, II:2, III:3, IV:4, V:5, VI:6, VII:7, VIII:8, IX:9, X:10 };
 const INV_ROMAN = {1:"I",2:"II",3:"III",4:"IV",5:"V",6:"VI",7:"VII",8:"VIII",9:"IX",10:"X"};
@@ -728,9 +715,7 @@ function parseEnchantLabelToNameLevel(label) {
   return { name: label.trim(), level: 1 };
 }
 
-function priorPenalty(uses) {
-  return (1 << uses) - 1;
-}
+function priorPenalty(uses) { return (1 << uses) - 1; }
 
 const BOOK_MULT = {
   "Protection": 1,
@@ -744,13 +729,11 @@ const BOOK_MULT = {
   "Depth Strider": 2,
   "Frost Walker": 2,
   "Soul Speed": 4,
-
   "Sharpness": 1,
   "Smite": 1,
   "Bane of Arthropods": 1,
   "Looting": 2,
   "Fire Aspect": 2,
-
   "Efficiency": 1,
   "Fortune": 2,
   "Silk Touch": 4
@@ -768,13 +751,11 @@ const MAX_LEVEL = {
   "Depth Strider": 3,
   "Frost Walker": 2,
   "Soul Speed": 3,
-
   "Sharpness": 5,
   "Smite": 5,
   "Bane of Arthropods": 5,
   "Looting": 3,
   "Fire Aspect": 2,
-
   "Efficiency": 5,
   "Fortune": 3,
   "Silk Touch": 1
@@ -838,128 +819,220 @@ function anvilApplyJava(targetEnchants, targetUses, sacrificeEnchants, sacrifice
   };
 }
 
-/**
- * ✅ optimalBookMerge now tracks:
- * - total levels spent (total)
- * - max single-step anvil cost (maxOp)  <-- correct "Too Expensive!" gate
- */
-function optimalBookMerge(enchants, wantSteps = false) {
-  const parsed = enchants.map(parseEnchantLabelToNameLevel);
-
+// ------------------------
+// NEW: Full-process planner (books + item), enforcing per-op < 40
+// ------------------------
+function consolidateEnchantList(labels) {
+  const parsed = labels.map(parseEnchantLabelToNameLevel);
   const consolidated = {};
   for (const e of parsed) consolidated[e.name] = Math.max(consolidated[e.name] ?? 0, e.level);
+  return consolidated;
+}
 
+function enchMapToLabelList(enchMap) {
+  const parts = [];
+  for (const [name, level] of Object.entries(enchMap)) {
+    if (level <= 1) parts.push(name);
+    else parts.push(`${name} ${INV_ROMAN[level] ?? level}`);
+  }
+  return parts.join(", ");
+}
+
+function canonKey(itemMask, itemUses, books) {
+  // books: array of {mask, uses}
+  const sorted = books
+    .slice()
+    .sort((a, b) => (a.mask - b.mask) || (a.uses - b.uses))
+    .map(b => `${b.mask}:${b.uses}`)
+    .join("|");
+  return `${itemMask}:${itemUses}::${sorted}`;
+}
+
+function optimalFullProcessPlan(selectedLabels, wantSteps) {
+  const consolidated = consolidateEnchantList(selectedLabels);
   const names = Object.keys(consolidated);
   const n = names.length;
-  if (n === 0) return { total: 0, steps: [], maxOp: 0 };
 
-  const leafBooks = names.map(name => ({
-    enchants: { [name]: consolidated[name] },
-    uses: 0,
-    label: `${name}${consolidated[name] > 1 ? " " + (INV_ROMAN[consolidated[name]] ?? consolidated[name]) : ""}`
-  }));
+  if (n === 0) return { feasible: true, total: 0, maxOp: 0, steps: [] };
 
-  const FULL = (1 << n) - 1;
-  const dp = Array.from({ length: 1 << n }, () => new Map());
+  const nameToIdx = new Map(names.map((nm, i) => [nm, i]));
+  const goalMask = (1 << n) - 1;
 
-  for (let i = 0; i < n; i++) {
-    dp[1 << i].set(0, {
-      cost: 0,
-      uses: 0,
-      enchants: { ...leafBooks[i].enchants },
-      steps: [],
-      label: leafBooks[i].label,
-      maxOp: 0
-    });
+  function mapToMask(enchMap) {
+    let m = 0;
+    for (const nm of Object.keys(enchMap)) {
+      const idx = nameToIdx.get(nm);
+      if (idx !== undefined) m |= (1 << idx);
+    }
+    return m;
   }
 
-  const relax = (map, uses, cand) => {
-    const ex = map.get(uses);
-    if (!ex || cand.cost < ex.cost) map.set(uses, cand);
-  };
+  // build leaf books
+  const leafBooks = names.map(nm => ({
+    type: "book",
+    ench: { [nm]: consolidated[nm] },
+    uses: 0,
+    mask: (1 << nameToIdx.get(nm)),
+    label: `${nm}${consolidated[nm] > 1 ? " " + (INV_ROMAN[consolidated[nm]] ?? consolidated[nm]) : ""}`
+  }));
 
-  for (let mask = 1; mask <= FULL; mask++) {
-    if ((mask & (mask - 1)) === 0) continue;
+  const startItem = { type: "item", ench: {}, uses: 0, mask: 0, label: "Item" };
 
-    for (let a = (mask - 1) & mask; a > 0; a = (a - 1) & mask) {
-      const b = mask ^ a;
-      if (b === 0) continue;
-      if (a > b) continue;
+  // Dijkstra over (itemMask,itemUses, multiset of books (mask,uses,ench,label))
+  const startBooks = leafBooks.map(b => ({ ...b }));
+  const startKey = canonKey(startItem.mask, startItem.uses, startBooks);
 
-      for (const A of dp[a].values()) {
-        for (const B of dp[b].values()) {
-          // A target + B sacrifice
-          {
-            const res = anvilApplyJava(A.enchants, A.uses, B.enchants, B.uses);
-            const newUses = res.newTargetUses;
-            const opCost = res.opCost;
+  const dist = new Map([[startKey, 0]]);
+  const bestMaxOp = new Map([[startKey, 0]]);
+  const prev = new Map(); // key -> { prevKey, step }
 
-            const maxOp = Math.max(A.maxOp ?? 0, B.maxOp ?? 0, opCost);
+  // simple priority queue (n small); array + min scan is fine
+  const pq = [{ key: startKey, cost: 0 }];
 
-            const steps = wantSteps
-              ? [...A.steps, ...B.steps, `Combine (${A.label}) + (${B.label}) → Book (cost ${opCost})${opCost >= 40 ? " ⚠ Too Expensive!" : ""}`]
-              : [];
+  // store full node payloads for reconstruction / expansion
+  const payload = new Map([[startKey, { item: startItem, books: startBooks }]]);
 
-            relax(dp[mask], newUses, {
-              cost: A.cost + B.cost + opCost,
-              uses: newUses,
-              enchants: res.newTargetEnchants,
-              steps,
-              label: "Book",
-              maxOp
-            });
-          }
+  while (pq.length) {
+    // pop min
+    let mi = 0;
+    for (let i = 1; i < pq.length; i++) if (pq[i].cost < pq[mi].cost) mi = i;
+    const cur = pq.splice(mi, 1)[0];
 
-          // B target + A sacrifice
-          {
-            const res = anvilApplyJava(B.enchants, B.uses, A.enchants, A.uses);
-            const newUses = res.newTargetUses;
-            const opCost = res.opCost;
+    const curCost = dist.get(cur.key);
+    if (curCost === undefined || cur.cost !== curCost) continue;
 
-            const maxOp = Math.max(A.maxOp ?? 0, B.maxOp ?? 0, opCost);
+    const state = payload.get(cur.key);
+    if (!state) continue;
 
-            const steps = wantSteps
-              ? [...B.steps, ...A.steps, `Combine (${B.label}) + (${A.label}) → Book (cost ${opCost})${opCost >= 40 ? " ⚠ Too Expensive!" : ""}`]
-              : [];
+    const { item, books } = state;
 
-            relax(dp[mask], newUses, {
-              cost: A.cost + B.cost + opCost,
-              uses: newUses,
-              enchants: res.newTargetEnchants,
-              steps,
-              label: "Book",
-              maxOp
-            });
-          }
+    if (item.mask === goalMask && books.length === 0) {
+      // reached goal
+      const steps = [];
+      if (wantSteps) {
+        let k = cur.key;
+        while (prev.has(k)) {
+          const p = prev.get(k);
+          steps.push(p.step);
+          k = p.prevKey;
         }
+        steps.reverse();
+        steps.push(`Total levels spent: ${curCost}`);
+      }
+      return {
+        feasible: true,
+        total: curCost,
+        maxOp: bestMaxOp.get(cur.key) ?? 0,
+        steps
+      };
+    }
+
+    // generate transitions:
+    // 1) book + book -> book
+    for (let i = 0; i < books.length; i++) {
+      for (let j = 0; j < books.length; j++) {
+        if (i === j) continue;
+
+        const A = books[i];
+        const B = books[j];
+
+        // target book A, sacrifice book B
+        const res = anvilApplyJava(A.ench, A.uses, B.ench, B.uses);
+        const opCost = res.opCost;
+        if (opCost >= 40) continue; // enforce rule
+
+        // ensure we didn't lose enchants (shouldn't for compatible inputs)
+        const newEnch = res.newTargetEnchants;
+        const newMask = mapToMask(newEnch);
+        const expectedMask = (A.mask | B.mask);
+        if (newMask !== expectedMask) continue;
+
+        const newBook = {
+          type: "book",
+          ench: newEnch,
+          uses: res.newTargetUses,
+          mask: newMask,
+          label: `Book(${enchMapToLabelList(newEnch)})`
+        };
+
+        const newBooks = books.filter((_, idx) => idx !== i && idx !== j);
+        newBooks.push(newBook);
+
+        const nextItem = item;
+        const nextKey = canonKey(nextItem.mask, nextItem.uses, newBooks);
+        const nextCost = curCost + opCost;
+        const nextMax = Math.max(bestMaxOp.get(cur.key) ?? 0, opCost);
+
+        const old = dist.get(nextKey);
+        if (old === undefined || nextCost < old) {
+          dist.set(nextKey, nextCost);
+          bestMaxOp.set(nextKey, nextMax);
+          payload.set(nextKey, { item: nextItem, books: newBooks });
+          pq.push({ key: nextKey, cost: nextCost });
+          if (wantSteps) prev.set(nextKey, {
+            prevKey: cur.key,
+            step: `Combine (${A.label}) + (${B.label}) → Book (cost ${opCost})`
+          });
+        }
+      }
+    }
+
+    // 2) item + book -> item  (apply book to item)
+    for (let j = 0; j < books.length; j++) {
+      const B = books[j];
+
+      const res = anvilApplyJava(item.ench, item.uses, B.ench, B.uses);
+      const opCost = res.opCost;
+      if (opCost >= 40) continue;
+
+      const newEnch = res.newTargetEnchants;
+      const newMask = mapToMask(newEnch);
+      const expectedMask = (item.mask | B.mask);
+      if (newMask !== expectedMask) continue;
+
+      const nextItem = {
+        type: "item",
+        ench: newEnch,
+        uses: res.newTargetUses,
+        mask: newMask,
+        label: "Item"
+      };
+
+      const newBooks = books.filter((_, idx) => idx !== j);
+
+      const nextKey = canonKey(nextItem.mask, nextItem.uses, newBooks);
+      const nextCost = curCost + opCost;
+      const nextMax = Math.max(bestMaxOp.get(cur.key) ?? 0, opCost);
+
+      const old = dist.get(nextKey);
+      if (old === undefined || nextCost < old) {
+        dist.set(nextKey, nextCost);
+        bestMaxOp.set(nextKey, nextMax);
+        payload.set(nextKey, { item: nextItem, books: newBooks });
+        pq.push({ key: nextKey, cost: nextCost });
+        if (wantSteps) prev.set(nextKey, {
+          prevKey: cur.key,
+          step: `Apply (${B.label}) → Item (cost ${opCost})`
+        });
       }
     }
   }
 
-  let best = null;
-  for (const s of dp[FULL].values()) {
-    if (!best || s.cost < best.cost) best = s;
-  }
-
-  const apply = anvilApplyJava({}, 0, best.enchants, best.uses);
-  const total = best.cost + apply.opCost;
-  const maxOp = Math.max(best.maxOp ?? 0, apply.opCost);
-
-  const steps = wantSteps
-    ? [...best.steps,
-        `Apply final book to item (cost ${apply.opCost})${apply.opCost >= 40 ? " ⚠ Too Expensive!" : ""}`,
-        `Total levels spent: ${total}`]
-    : [];
-
-  return { total, steps, maxOp };
+  return { feasible: false, total: Infinity, maxOp: Infinity, steps: wantSteps ? ["No valid <40-per-step anvil sequence found."] : [] };
 }
 
-function isTooExpensiveForItem(enchants) {
-  return optimalBookMerge(enchants, false).maxOp >= 40;
+function isFeasibleUnder40FullProcess(selectedLabels) {
+  return optimalFullProcessPlan(selectedLabels, false).feasible;
 }
 
+// ------------------------
+// XP summary (leave total estimate as "best feasible plan if possible")
+// ------------------------
 function estimateOptimalLevelsForItem(enchants) {
-  return optimalBookMerge(enchants, false).total;
+  const plan = optimalFullProcessPlan(enchants, false);
+  if (plan.feasible) return plan.total;
+  // fallback: if impossible under 40, still show the theoretical min spend using old behavior:
+  return optimalBookMergeFallback(enchants).total;
 }
 
 function estimateNaiveLevelsForItem(enchants) {
@@ -979,10 +1052,98 @@ function estimateNaiveLevelsForItem(enchants) {
   return total;
 }
 
-function generateEnchantPlan(enchants) {
-  return optimalBookMerge(enchants, true).steps;
+// ------------------------
+// Fallback old "mega-book" optimizer for display when infeasible
+// ------------------------
+function optimalBookMergeFallback(enchants) {
+  const consolidated = consolidateEnchantList(enchants);
+  const names = Object.keys(consolidated);
+  const n = names.length;
+  if (n === 0) return { total: 0, steps: [] };
+
+  const leafBooks = names.map(name => ({
+    enchants: { [name]: consolidated[name] },
+    uses: 0,
+    label: `${name}${consolidated[name] > 1 ? " " + (INV_ROMAN[consolidated[name]] ?? consolidated[name]) : ""}`
+  }));
+
+  const FULL = (1 << n) - 1;
+  const dp = Array.from({ length: 1 << n }, () => new Map());
+
+  for (let i = 0; i < n; i++) {
+    dp[1 << i].set(0, {
+      cost: 0,
+      uses: 0,
+      enchants: { ...leafBooks[i].enchants },
+      steps: [],
+      label: leafBooks[i].label
+    });
+  }
+
+  const relax = (map, uses, cand) => {
+    const ex = map.get(uses);
+    if (!ex || cand.cost < ex.cost) map.set(uses, cand);
+  };
+
+  for (let mask = 1; mask <= FULL; mask++) {
+    if ((mask & (mask - 1)) === 0) continue;
+
+    for (let a = (mask - 1) & mask; a > 0; a = (a - 1) & mask) {
+      const b = mask ^ a;
+      if (b === 0) continue;
+      if (a > b) continue;
+
+      for (const A of dp[a].values()) {
+        for (const B of dp[b].values()) {
+          {
+            const res = anvilApplyJava(A.enchants, A.uses, B.enchants, B.uses);
+            const newUses = res.newTargetUses;
+            const opCost = res.opCost;
+            relax(dp[mask], newUses, {
+              cost: A.cost + B.cost + opCost,
+              uses: newUses,
+              enchants: res.newTargetEnchants,
+              steps: [],
+              label: "Book"
+            });
+          }
+          {
+            const res = anvilApplyJava(B.enchants, B.uses, A.enchants, A.uses);
+            const newUses = res.newTargetUses;
+            const opCost = res.opCost;
+            relax(dp[mask], newUses, {
+              cost: A.cost + B.cost + opCost,
+              uses: newUses,
+              enchants: res.newTargetEnchants,
+              steps: [],
+              label: "Book"
+            });
+          }
+        }
+      }
+    }
+  }
+
+  let best = null;
+  for (const s of dp[FULL].values()) {
+    if (!best || s.cost < best.cost) best = s;
+  }
+
+  const apply = anvilApplyJava({}, 0, best.enchants, best.uses);
+  const total = best.cost + apply.opCost;
+  return { total, steps: [] };
 }
 
+// ------------------------
+// Modal step generation uses full-process plan
+// ------------------------
+function generateEnchantPlan(enchants) {
+  return optimalFullProcessPlan(enchants, true).steps;
+}
+
+// ------------------------
+// XP summary UI
+// ------------------------
 function updateXpSummary() {
   const totalEl = document.getElementById("xp-total");
   const savedEl = document.getElementById("xp-saved");
